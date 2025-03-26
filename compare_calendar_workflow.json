@@ -1,0 +1,103 @@
+{
+  "name": "Compare Calendar CSV and JSON",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "http://xmlcalendar.ru/data/ru/2022/calendar.csv",
+        "responseFormat": "string"
+      },
+      "id": "1",
+      "name": "Get CSV",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://xmlcalendar.ru/data/ru/2022/calendar.json",
+        "responseFormat": "json"
+      },
+      "id": "2",
+      "name": "Get JSON",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "headerRow": true
+        },
+        "rawData": false,
+        "dataPropertyName": "data",
+        "delimiter": ";"
+      },
+      "id": "3",
+      "name": "Parse CSV",
+      "type": "n8n-nodes-base.csvFile",
+      "typeVersion": 2,
+      "position": [
+        500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst csvItems = items[0].json.data;\nconst jsonItems = items[1].json;\n\nconst normalize = (entry) => ({\n  date: entry.date,\n  t: entry.t,\n  h: entry.h,\n  n: entry.n,\n});\n\nconst csvData = csvItems.map(normalize).sort((a, b) => a.date.localeCompare(b.date));\nconst jsonData = jsonItems.map(normalize).sort((a, b) => a.date.localeCompare(b.date));\n\nconst isEqual = JSON.stringify(csvData) === JSON.stringify(jsonData);\n\nreturn [\n  {\n    json: {\n      result: isEqual ? \"✅ Данные совпадают\" : \"❌ Обнаружены различия\",\n      csvLength: csvData.length,\n      jsonLength: jsonData.length,\n    }\n  }\n];\n"
+      },
+      "id": "4",
+      "name": "Compare",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Get CSV": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JSON": {
+      "main": [
+        [
+          {
+            "node": "Compare",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Parse CSV": {
+      "main": [
+        [
+          {
+            "node": "Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "tags": [],
+  "versionId": "1743012740.432046"
+}
