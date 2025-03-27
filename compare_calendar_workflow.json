@@ -1,72 +1,109 @@
 {
-  "name": "Compare Calendar CSV and JSON",
+  "name": "Norm1",
   "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        100
+      ],
+      "id": "153c0fb2-ef7d-43a8-b6ed-eb21beffed48"
+    },
     {
       "parameters": {
         "url": "http://xmlcalendar.ru/data/ru/2022/calendar.csv",
-        "responseFormat": "string"
+        "options": {}
       },
-      "id": "1",
       "name": "Get CSV",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
+      "typeVersion": 3,
       "position": [
-        300,
-        200
-      ]
+        0,
+        0
+      ],
+      "id": "0f3a0ce0-5777-4557-9347-d0bf15477f32"
     },
     {
       "parameters": {
         "url": "http://xmlcalendar.ru/data/ru/2022/calendar.json",
-        "responseFormat": "json"
+        "options": {}
       },
-      "id": "2",
       "name": "Get JSON",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 2,
+      "typeVersion": 3,
       "position": [
-        300,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "options": {
-          "headerRow": true
-        },
-        "rawData": false,
-        "dataPropertyName": "data",
-        "delimiter": ";"
-      },
-      "id": "3",
-      "name": "Parse CSV",
-      "type": "n8n-nodes-base.csvFile",
-      "typeVersion": 2,
-      "position": [
-        500,
+        0,
         200
-      ]
+      ],
+      "id": "16d420ac-297e-4a89-ba76-8fe56b714108"
     },
     {
       "parameters": {
-        "functionCode": "\nconst csvItems = items[0].json.data;\nconst jsonItems = items[1].json;\n\nconst normalize = (entry) => ({\n  date: entry.date,\n  t: entry.t,\n  h: entry.h,\n  n: entry.n,\n});\n\nconst csvData = csvItems.map(normalize).sort((a, b) => a.date.localeCompare(b.date));\nconst jsonData = jsonItems.map(normalize).sort((a, b) => a.date.localeCompare(b.date));\n\nconst isEqual = JSON.stringify(csvData) === JSON.stringify(jsonData);\n\nreturn [\n  {\n    json: {\n      result: isEqual ? \"✅ Данные совпадают\" : \"❌ Обнаружены различия\",\n      csvLength: csvData.length,\n      jsonLength: jsonData.length,\n    }\n  }\n];\n"
+        "language": "python",
+        "pythonCode": "import csv\nimport io\nimport re\n\n# Получаем входной элемент\nitem = _input.item\ndata_str = item.json['data']\n\n# Чтение CSV\nreader = csv.reader(io.StringIO(data_str))\nheaders = next(reader)\nvalues = next(reader)\n\n# Месяцы\nmonths = []\nfor i in range(1, 13):\n    months.append({\n        \"month\": i,\n        \"days\": values[i]\n    })\n\n# Переходы со спецсимволами (*, +)\ntransitions = []\nfor month_index, days in enumerate(values[1:13]):\n    for day in days.split(','):\n        if any(symbol in day for symbol in ['*', '+']):\n            clean_day = re.sub(r'[^\\d]', '', day)\n            if clean_day:\n                transitions.append({\n                    \"from\": f\"{month_index + 1:02}.{int(clean_day):02}\",\n                    \"to\": f\"{month_index + 1:02}.{int(clean_day):02}\"\n                })\n\n# Статистика\nstatistic = {\n    \"workdays\": int(values[13]),\n    \"holidays\": int(values[14]),\n    \"hours40\": float(values[15]),\n    \"hours36\": float(values[16]),\n    \"hours24\": float(values[17]),\n}\n\n# Готовим финальный JSON\nresult = {\n    \"year\": int(values[0]),\n    \"months\": months,\n    \"transitions\": transitions,\n    \"statistic\": statistic\n}\n\n# Возвращаем результат как обычный JSON\nreturn [{\"json\": result}]\n"
       },
-      "id": "4",
-      "name": "Compare",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        700,
-        300
-      ]
+        220,
+        0
+      ],
+      "id": "c32f8889-612d-43ed-9e6f-28c8493752d8",
+      "name": "Code",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        440,
+        80
+      ],
+      "id": "512c1c10-a615-4b41-a404-2f1a89c6ba4d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "input_items = _input.all()\n\njson1 = dict(input_items[0].json)\njson2 = dict(input_items[1].json)\n\ndiff = {}\n\n# --- Сравнение year ---\nif json1.get(\"year\") != json2.get(\"year\"):\n    diff[\"year\"] = {\n        \"value1\": json1.get(\"year\"),\n        \"value2\": json2.get(\"year\")\n    }\n\n# --- Сравнение statistic ---\nstat1 = json1.get(\"statistic\", {})\nstat2 = json2.get(\"statistic\", {})\n\nstat_diff = {}\nfor key in stat1:\n    v1 = stat1[key]\n    v2 = stat2.get(key)\n\n    try:\n        f1 = float(v1)\n        f2 = float(v2)\n        if abs(f1 - f2) > 0.00001:\n            stat_diff[key] = {\"value1\": v1, \"value2\": v2}\n    except:\n        if v1 != v2:\n            stat_diff[key] = {\"value1\": v1, \"value2\": v2}\n\nfor key in stat2:\n    if key not in stat1:\n        stat_diff[key] = f\"Присутствует только во втором JSON\"\n\nif stat_diff:\n    diff[\"statistic\"] = stat_diff\n\n# --- Сравнение months ---\nmonths1 = json1.get(\"months\", [])\nmonths2 = json2.get(\"months\", [])\n\nmonths_diff = []\n\nfor i in range(max(len(months1), len(months2))):\n    m1 = months1[i] if i < len(months1) else None\n    m2 = months2[i] if i < len(months2) else None\n\n    if m1 is None:\n        months_diff.append({\"index\": i, \"month\": m2[\"month\"], \"reason\": \"нет в первом\"})\n        continue\n    if m2 is None:\n        months_diff.append({\"index\": i, \"month\": m1[\"month\"], \"reason\": \"нет во втором\"})\n        continue\n\n    if m1[\"month\"] != m2[\"month\"]:\n        months_diff.append({\n            \"index\": i,\n            \"month1\": m1[\"month\"],\n            \"month2\": m2[\"month\"],\n            \"reason\": \"номера месяцев не совпадают\"\n        })\n        continue\n\n    # Сравниваем days как строки без пробелов\n    days1 = m1[\"days\"].replace(\" \", \"\")\n    days2 = m2[\"days\"].replace(\" \", \"\")\n    if days1 != days2:\n        months_diff.append({\n            \"month\": m1[\"month\"],\n            \"days1\": days1,\n            \"days2\": days2\n        })\n\nif months_diff:\n    diff[\"months\"] = months_diff\n\n# --- Сравнение transitions ---\ntrans1 = json1.get(\"transitions\", [])\ntrans2 = json2.get(\"transitions\", [])\n\ntransitions_diff = []\n\nif len(trans1) != len(trans2):\n    transitions_diff.append(f\"Количество отличается: {len(trans1)} vs {len(trans2)}\")\n\nfor i in range(min(len(trans1), len(trans2))):\n    t1 = trans1[i]\n    t2 = trans2[i]\n    if t1 != t2:\n        transitions_diff.append({\n            \"index\": i,\n            \"from1\": t1.get(\"from\"),\n            \"to1\": t1.get(\"to\"),\n            \"from2\": t2.get(\"from\"),\n            \"to2\": t2.get(\"to\")\n        })\n\nif transitions_diff:\n    diff[\"transitions\"] = transitions_diff\n\n# --- Финальный результат ---\nreturn [{\n    \"json\": {\n        \"equal\": len(diff) == 0,\n        \"diff\": diff\n    }\n}]\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        80
+      ],
+      "id": "04d08132-adac-402a-a76e-f81922c3f7a8",
+      "name": "Code1"
     }
   ],
+  "pinData": {},
   "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Get CSV": {
       "main": [
         [
           {
-            "node": "Parse CSV",
+            "node": "Code",
             "type": "main",
             "index": 0
           }
@@ -77,18 +114,29 @@
       "main": [
         [
           {
-            "node": "Compare",
+            "node": "Merge",
             "type": "main",
             "index": 1
           }
         ]
       ]
     },
-    "Parse CSV": {
+    "Code": {
       "main": [
         [
           {
-            "node": "Compare",
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code1",
             "type": "main",
             "index": 0
           }
@@ -97,7 +145,13 @@
     }
   },
   "active": false,
-  "settings": {},
-  "tags": [],
-  "versionId": "1743012740.432046"
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a64c1724-5966-4a48-b5e8-963a16e1b854",
+  "meta": {
+    "instanceId": "2a87bf968cc1e5a326513536aa0b63731b843fb05eb4ca49317f8af3f09d351c"
+  },
+  "id": "QZi00xh7odGxuETW",
+  "tags": []
 }
